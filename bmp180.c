@@ -13,13 +13,41 @@
 #define LOCAL static
 #endif
 
-#define BMP180_I2C_SDA          (2)
-#define BMP180_I2C_SCL          (0)
+#define BMP180_RX_QUEUE_SIZE      10
+#define BMP180_TASK_PRIORITY      9
 
-#define BMP180_RX_QUEUE_SIZE    10
-#define BMP180_TASK_PRIORITY    9
-#define BMP180_DEVICE_ADDRESS 0x77
-#define BMP180_REGISTER_VERSION 0xD1
+#define BMP180_DEVICE_ADDRESS     0x77
+
+#define BMP180_VERSION_REG        0xD0
+#define BMP180_CONTROL_REG        0xF4
+#define BMP180_RESET_REG          0xE0
+#define BMP180_OUT_MSB_REG        0xF6
+#define BMP180_OUT_LSB_REG        0xF7
+#define BMP180_OUT_XLSB_REG       0xF8
+
+#define BMP180_CALIBRATION_REG    0xAA
+
+//
+// Values for BMP180_CONTROL_REG
+//
+#define BMP180_MEASURE_TEMP       0x2E
+#define BMP180_MEASURE_PRESS_OSS0 0x34
+#define BMP180_MEASURE_PRESS_OSS1 0x74
+#define BMP180_MEASURE_PRESS_OSS2 0xB4
+#define BMP180_MEASURE_PRESS_OSS3 0xF4
+
+#define BMP180_DEFAULT_CONV_TIME  5000
+
+//
+// CHIP ID stored in BMP180_VERSION_REG
+//
+#define BMP180_CHIP_ID            0x55
+
+//
+// Reset value for BMP180_RESET_REG
+//
+#define BMP180_RESET_VALUE        0xB6
+
 
 // BMP180_Event_Command
 typedef struct
@@ -85,6 +113,18 @@ LOCAL void bmp180_driver_task(void *pvParameters)
     }
 }
 
+LOCAL uint8_t bmp180_readRegister8(uint8_t reg)
+{
+    uint8_t r = 0;
+
+    if (!i2c_slave_read(BMP180_DEVICE_ADDRESS, reg, &r, 1))
+    {
+        r = 0;
+    }
+    return r;
+}
+
+
 LOCAL int16_t bmp180_readRegister16(uint8_t reg)
 {
     uint8_t d[] = { 0, 0 };
@@ -99,7 +139,7 @@ LOCAL int16_t bmp180_readRegister16(uint8_t reg)
 
 LOCAL void bmp180_start_Messurement(uint8_t cmd)
 {
-    uint8_t d[] = { 0xF4, cmd };
+    uint8_t d[] = { BMP180_CONTROL_REG, cmd };
 
     i2c_slave_write(BMP180_DEVICE_ADDRESS, d, 2);
 }
@@ -107,29 +147,29 @@ LOCAL void bmp180_start_Messurement(uint8_t cmd)
 LOCAL int16_t bmp180_getUncompensatedMessurement(uint8_t cmd)
 {
     // Write Start Code into reg 0xF4 (Currently without oversampling ...)
-    bmp180_start_Messurement((cmd==BMP180_TEMPERATURE)?0x2E:0x34);
+    bmp180_start_Messurement((cmd==BMP180_TEMPERATURE)?BMP180_MEASURE_TEMP:BMP180_MEASURE_PRESS_OSS0);
 
     // Wait 5ms Datasheet states 4.5ms
-    sdk_os_delay_us(5000);
+    sdk_os_delay_us(BMP180_DEFAULT_CONV_TIME);
 
-    return (int16_t)bmp180_readRegister16(0xF6);
+    return (int16_t)bmp180_readRegister16(BMP180_OUT_MSB_REG);
 }
 
 LOCAL void bmp180_fillInternalConstants(void)
 {
-    AC1 = bmp180_readRegister16(0xAA);
-    AC2 = bmp180_readRegister16(0xAC);
-    AC3 = bmp180_readRegister16(0xAE);
-    AC4 = bmp180_readRegister16(0xB0);
-    AC5 = bmp180_readRegister16(0xB2);
-    AC6 = bmp180_readRegister16(0xB4);
+    AC1 = bmp180_readRegister16(BMP180_CALIBRATION_REG+0);
+    AC2 = bmp180_readRegister16(BMP180_CALIBRATION_REG+2);
+    AC3 = bmp180_readRegister16(BMP180_CALIBRATION_REG+4);
+    AC4 = bmp180_readRegister16(BMP180_CALIBRATION_REG+6);
+    AC5 = bmp180_readRegister16(BMP180_CALIBRATION_REG+8);
+    AC6 = bmp180_readRegister16(BMP180_CALIBRATION_REG+10);
 
-    B1 = bmp180_readRegister16(0xB6);
-    B2 = bmp180_readRegister16(0xB8);
+    B1 = bmp180_readRegister16(BMP180_CALIBRATION_REG+12);
+    B2 = bmp180_readRegister16(BMP180_CALIBRATION_REG+14);
 
-    MB = bmp180_readRegister16(0xBA);
-    MC = bmp180_readRegister16(0xBC);
-    MD = bmp180_readRegister16(0xBE);
+    MB = bmp180_readRegister16(BMP180_CALIBRATION_REG+16);
+    MC = bmp180_readRegister16(BMP180_CALIBRATION_REG+18);
+    MD = bmp180_readRegister16(BMP180_CALIBRATION_REG+20);
 
 #ifdef DEBUG
     printf("%s: AC1:=%d AC2:=%d AC3:=%d AC4:=%u AC5:=%u AC6:=%u \n", __FUNCTION__, AC1, AC2, AC3, AC4, AC5, AC6);
@@ -151,7 +191,7 @@ LOCAL bool bmp180_create_communication_queues()
 
 LOCAL bool bmp180_is_avaialble()
 {
-    return (bmp180_readRegister16(BMP180_REGISTER_VERSION)!=0);
+    return (bmp180_readRegister8(BMP180_VERSION_REG)==BMP180_CHIP_ID);
 }
 
 LOCAL bool bmp180_createTask()
