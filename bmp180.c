@@ -277,7 +277,7 @@ LOCAL void bmp180_meassure(const bmp180_command_t* command)
         if (!bmp180_informUser(command->resultQueue, command->cmd, ((bmp180_temp_t)T)/10.0, (bmp180_press_t)P))
         {
             // Failed to send info to user
-            printf("%s: Unable to inform user bmp180_informUser returned \"false\"", __FUNCTION__);
+            printf("%s: Unable to inform user bmp180_informUser returned \"false\"\n", __FUNCTION__);
         }
     }
 }
